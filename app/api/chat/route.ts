@@ -16,7 +16,7 @@ interface IncomingTask {
 // Gemini's free tier (via Google AI Studio) is used here — no billing required
 // to get started. See https://aistudio.google.com/app/apikey to grab a key.
 const GEMINI_URL =
-  "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
+  "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent";
 
 function buildSystemPrompt(tasks: IncomingTask[]): string {
   const pending = tasks.filter((t) => !t.done);
