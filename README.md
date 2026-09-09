@@ -14,13 +14,13 @@ https://github.com/user-attachments/assets/91578a83-9a27-44e8-84b0-96defcfd7366
 
 ```bash
 npm install
-cp .env.example .env.local   # then paste your Anthropic API key in
+cp .env.example .env.local   # then paste your Gemini API key in
 npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000).
 
-Get an API key at [console.anthropic.com/settings/keys](https://console.anthropic.com/settings/keys). Without it, the orb still works fully — only the **ASSISTANT** panel's chat needs the key.
+Get a **free** API key (no credit card required) at [aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey). Without it, the orb still works fully — only the **ASSISTANT** panel's chat needs the key. The free tier has daily rate limits but is plenty for personal use; note Google may use free-tier prompts to improve their models, so avoid sending sensitive info through it.
 
 ## The assistant
 
@@ -81,8 +81,8 @@ Click **GESTURES OFF** (or press `G`) and allow camera access, then:
   - `useVoice.ts` — mic input (speech-to-text) and spoken replies (text-to-speech).
   - `taskStore.ts` — personal/work task CRUD, persisted to `localStorage`.
   - `types.ts` — shared types.
-- **`app/api/chat/route.ts`** — server route that calls the Anthropic API with
-  your `ANTHROPIC_API_KEY`, keeping it off the client.
+- **`app/api/chat/route.ts`** — server route that calls the Google Gemini API with
+  your `GEMINI_API_KEY`, keeping it off the client.
 
 ## License
 

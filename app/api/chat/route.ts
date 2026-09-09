@@ -13,8 +13,10 @@ interface IncomingTask {
   done: boolean;
 }
 
-const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
-const MODEL = "claude-sonnet-5";
+// Gemini's free tier (via Google AI Studio) is used here — no billing required
+// to get started. See https://aistudio.google.com/app/apikey to grab a key.
+const GEMINI_URL =
+  "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent";
 
 function buildSystemPrompt(tasks: IncomingTask[]): string {
   const pending = tasks.filter((t) => !t.done);
@@ -41,12 +43,12 @@ function buildSystemPrompt(tasks: IncomingTask[]): string {
 }
 
 export async function POST(req: NextRequest) {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     return NextResponse.json(
       {
         error:
-          "Missing ANTHROPIC_API_KEY on the server. Add it to .env.local and restart the dev server.",
+          "Missing GEMINI_API_KEY on the server. Add it to .env.local and restart the dev server.",
       },
       { status: 500 },
     );
@@ -66,42 +68,42 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "No messages provided" }, { status: 400 });
   }
 
+  // Gemini uses "user" / "model" roles (not "assistant"), and takes the
+  // system prompt as a separate top-level field rather than a message.
+  const contents = messages.map((m) => ({
+    role: m.role === "assistant" ? "model" : "user",
+    parts: [{ text: m.content }],
+  }));
+
   try {
-    const response = await fetch(ANTHROPIC_URL, {
+    const response = await fetch(`${GEMINI_URL}?key=${encodeURIComponent(apiKey)}`, {
       method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-      },
+      headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        model: MODEL,
-        max_tokens: 600,
-        system: buildSystemPrompt(tasks),
-        messages: messages.map((m) => ({ role: m.role, content: m.content })),
+        system_instruction: { parts: [{ text: buildSystemPrompt(tasks) }] },
+        contents,
+        generationConfig: { maxOutputTokens: 600 },
       }),
     });
 
     if (!response.ok) {
       const errText = await response.text();
       return NextResponse.json(
-        { error: `Anthropic API error (${response.status}): ${errText}` },
+        { error: `Gemini API error (${response.status}): ${errText}` },
         { status: 502 },
       );
     }
 
     const data = await response.json();
-    const text = Array.isArray(data.content)
-      ? data.content
-          .filter((block: { type: string }) => block.type === "text")
-          .map((block: { text: string }) => block.text)
-          .join("\n")
+    const parts = data?.candidates?.[0]?.content?.parts;
+    const text = Array.isArray(parts)
+      ? parts.map((p: { text?: string }) => p.text ?? "").join("\n")
       : "";
 
     return NextResponse.json({ reply: text || "…" });
   } catch (err) {
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "Unknown error calling Anthropic API" },
+      { error: err instanceof Error ? err.message : "Unknown error calling Gemini API" },
       { status: 500 },
     );
   }
