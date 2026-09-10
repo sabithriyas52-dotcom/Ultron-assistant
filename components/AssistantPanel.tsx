@@ -32,7 +32,7 @@ export default function AssistantPanel({
     },
   });
 
-  const { messages, pending, error, sendMessage } = useChat({
+  const { messages, pending, error, sendMessage, addAssistantMessage } = useChat({
     getTasks: () => tasks,
     onReply: (text) => {
       if (voice.ttsSupported) voice.speak(text);
@@ -50,6 +50,25 @@ export default function AssistantPanel({
   useEffect(() => {
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, pending]);
+
+  // Greet the user with a spoken line the moment the panel is opened,
+  // instead of leaving it silent until they type or speak first.
+  const greetedRef = useRef(false);
+  useEffect(() => {
+    if (open && !greetedRef.current) {
+      greetedRef.current = true;
+      const greetings = [
+        "What's up, boss?",
+        "Ready when you are.",
+        "Systems online. What do you need?",
+        "Hey, good to see you.",
+      ];
+      const greeting = greetings[Math.floor(Math.random() * greetings.length)];
+      addAssistantMessage(greeting);
+    } else if (!open) {
+      greetedRef.current = false;
+    }
+  }, [open, addAssistantMessage]);
 
   if (!open) return null;
 

@@ -75,5 +75,21 @@ export function useChat({ getTasks, onReply }: UseChatOptions) {
 
   const clearChat = useCallback(() => setMessages([]), []);
 
-  return { messages, pending, error, sendMessage, clearChat };
+  // Injects a message as if the assistant said it, without hitting the API.
+  // Used for things like a spoken greeting when the panel first opens.
+  const addAssistantMessage = useCallback(
+    (content: string) => {
+      const assistantMsg: ChatMessage = {
+        id: makeId(),
+        role: "assistant",
+        content,
+        createdAt: Date.now(),
+      };
+      setMessages((prev) => [...prev, assistantMsg]);
+      onReply?.(content);
+    },
+    [onReply],
+  );
+
+  return { messages, pending, error, sendMessage, clearChat, addAssistantMessage };
 }
