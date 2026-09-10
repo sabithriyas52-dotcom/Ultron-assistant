@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { auth } from "@/auth";
 
 export const runtime = "nodejs";
 
@@ -13,12 +14,41 @@ interface IncomingTask {
   done: boolean;
 }
 
+interface CalendarEvent {
+  summary?: string;
+  start?: { date?: string; dateTime?: string };
+  end?: { date?: string; dateTime?: string };
+}
+
 // Gemini's free tier (via Google AI Studio) is used here — no billing required
 // to get started. See https://aistudio.google.com/app/apikey to grab a key.
 const GEMINI_URL =
   "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent";
 
-function buildSystemPrompt(tasks: IncomingTask[]): string {
+async function fetchUpcomingEvents(accessToken: string): Promise<CalendarEvent[]> {
+  const now = new Date().toISOString();
+  const res = await fetch(
+    `https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=${now}&maxResults=10&singleEvents=true&orderBy=startTime`,
+    {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    },
+  );
+
+  if (!res.ok) return [];
+
+  const data = await res.json();
+  return Array.isArray(data.items) ? data.items : [];
+}
+
+function formatEvent(e: CalendarEvent): string {
+  const when = e.start?.dateTime ?? e.start?.date ?? "unknown time";
+  return `- ${e.summary ?? "(untitled event)"} — ${when}`;
+}
+
+function buildSystemPrompt(
+  tasks: IncomingTask[],
+  events: CalendarEvent[] | null,
+): string {
   const pending = tasks.filter((t) => !t.done);
   const personal = pending.filter((t) => t.category === "personal");
   const work = pending.filter((t) => t.category === "work");
@@ -26,9 +56,22 @@ function buildSystemPrompt(tasks: IncomingTask[]): string {
   const list = (items: IncomingTask[]) =>
     items.length ? items.map((t) => `- ${t.title}`).join("\n") : "(none)";
 
+  let calendarSection: string;
+  if (events === null) {
+    calendarSection =
+      "The user has not connected their Google Calendar yet, so you have no calendar data. If they ask about events, tell them to connect Google Calendar first using the button in the assistant panel.";
+  } else if (events.length === 0) {
+    calendarSection = "The user has no upcoming calendar events.";
+  } else {
+    calendarSection = [
+      "Here are the user's upcoming Google Calendar events:",
+      ...events.map(formatEvent),
+    ].join("\n");
+  }
+
   return [
     "You are ULTRON, a personal AI assistant embedded in a holographic orb interface.",
-    "You help the user manage both personal and work tasks, and answer general questions.",
+    "You help the user manage both personal and work tasks, check their calendar, and answer general questions.",
     "Keep spoken replies short and natural (1-3 sentences) since they are read aloud with text-to-speech, unless the user clearly asks for something longer or more detailed (like a list, explanation, or written content).",
     "Do not use markdown formatting in your replies — plain spoken sentences only.",
     "",
@@ -37,6 +80,8 @@ function buildSystemPrompt(tasks: IncomingTask[]): string {
     "",
     "Current pending WORK tasks:",
     list(work),
+    "",
+    calendarSection,
     "",
     "If the user asks you to add, complete, or remove a task, respond conversationally confirming it — the app handles the actual task list separately based on the user's own actions in the UI, so just acknowledge naturally.",
   ].join("\n");
@@ -68,6 +113,22 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "No messages provided" }, { status: 400 });
   }
 
+  // Try to pull the user's calendar events if they're signed in with Google.
+  // `events` stays null (rather than []) when there's no connection at all,
+  // so the system prompt can tell the difference between "not connected"
+  // and "connected but nothing scheduled".
+  let events: CalendarEvent[] | null = null;
+  try {
+    const session = await auth();
+    if (session?.accessToken) {
+      events = await fetchUpcomingEvents(session.accessToken);
+    }
+  } catch {
+    // If auth() or the calendar fetch fails for any reason, just proceed
+    // without calendar context rather than failing the whole chat request.
+    events = null;
+  }
+
   // Gemini uses "user" / "model" roles (not "assistant"), and takes the
   // system prompt as a separate top-level field rather than a message.
   const contents = messages.map((m) => ({
@@ -80,7 +141,7 @@ export async function POST(req: NextRequest) {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
-        system_instruction: { parts: [{ text: buildSystemPrompt(tasks) }] },
+        system_instruction: { parts: [{ text: buildSystemPrompt(tasks, events) }] },
         contents,
         generationConfig: { maxOutputTokens: 600 },
       }),
