@@ -5,6 +5,7 @@ import type { TaskCategory } from "@/lib/assistant/types";
 import { useTasks } from "@/lib/assistant/taskStore";
 import { useVoice } from "@/lib/assistant/useVoice";
 import { useChat } from "@/lib/assistant/useChat";
+import { GoogleConnectButton } from "@/components/GoogleConnectButton";
 
 type Tab = "chat" | "tasks";
 
@@ -79,6 +80,7 @@ export default function AssistantPanel({
             TASKS
           </button>
         </div>
+        <GoogleConnectButton />
         <button type="button" className="assistant-close" onClick={onClose} aria-label="Close">
           ×
         </button>
