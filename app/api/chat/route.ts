@@ -70,7 +70,7 @@ function buildSystemPrompt(
   }
 
   return [
-    "You are ULTRON, a personal AI assistant embedded in a holographic orb interface.",
+    "You are INFINI, a personal AI assistant embedded in a holographic orb interface.",
     "You help the user manage both personal and work tasks, check their calendar, and answer general questions.",
     "Keep spoken replies short and natural (1-3 sentences) since they are read aloud with text-to-speech, unless the user clearly asks for something longer or more detailed (like a list, explanation, or written content).",
     "Do not use markdown formatting in your replies — plain spoken sentences only.",
@@ -124,8 +124,6 @@ export async function POST(req: NextRequest) {
       events = await fetchUpcomingEvents(session.accessToken);
     }
   } catch {
-    // If auth() or the calendar fetch fails for any reason, just proceed
-    // without calendar context rather than failing the whole chat request.
     events = null;
   }
 

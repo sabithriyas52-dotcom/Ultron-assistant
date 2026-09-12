@@ -3,7 +3,7 @@ import "./globals.css";
 import { AuthProvider } from "@/components/AuthProvider";
 
 export const metadata: Metadata = {
-  title: "ULTRON Orb UI",
+  title: "INFINI Orb UI",
   description: "An Iron Man-inspired holographic orb built with Three.js and Next.js",
 };
 
@@ -20,10 +20,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-<body>
-  <AuthProvider>{children}</AuthProvider>
-</body>
-    
+      <body>
+        <AuthProvider>{children}</AuthProvider>
+      </body>
     </html>
   );
 }

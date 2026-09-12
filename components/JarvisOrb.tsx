@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createOrbScene, type OrbSceneApi } from "@/lib/orbScene";
 import { HandTracker, type TrackerStatus } from "@/lib/handTracker";
+import { useWakeWord } from "@/lib/assistant/useWakeWord";
 import AssistantPanel from "@/components/AssistantPanel";
 
 type CameraState = "off" | "starting" | "on" | "error";
@@ -24,6 +25,8 @@ export default function JarvisOrb() {
   const [status, setStatus] = useState<TrackerStatus>({ hands: 0, mode: "idle" });
   const [error, setError] = useState<string | null>(null);
   const [assistantOpen, setAssistantOpen] = useState(false);
+  const [voiceEnabled, setVoiceEnabled] = useState(false);
+  const [wakeCommand, setWakeCommand] = useState<{ token: number; text: string } | null>(null);
 
   const handleActivity = useCallback((level: number) => {
     sceneRef.current?.setActivity(level);
@@ -84,6 +87,20 @@ export default function JarvisOrb() {
     else void startGestures();
   }, [startGestures, stopGestures]);
 
+  // Always-on wake-word listening ("INFINI") — only runs once the user has
+  // enabled voice (browsers require a user gesture before granting mic
+  // access) and pauses while the assistant panel itself is open, since a
+  // second SpeechRecognition instance would fight the panel's own mic for
+  // the microphone.
+  useWakeWord({
+    enabled: voiceEnabled && !assistantOpen,
+    wakeWord: "infini",
+    onWake: (command) => {
+      setAssistantOpen(true);
+      setWakeCommand({ token: Date.now(), text: command });
+    },
+  });
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       switch (e.key) {
@@ -123,7 +140,7 @@ export default function JarvisOrb() {
       <div className="overlay-grain" />
       <div className="overlay-scanlines" />
 
-      <div className="hud hud-title">U.L.T.R.O.N.</div>
+      <div className="hud hud-title">I.N.F.I.N.I.</div>
 
       <div className="hud hud-hint">
         <div>
@@ -143,7 +160,22 @@ export default function JarvisOrb() {
             <span className="key">A</span> assistant
           </div>
         )}
+        {voiceEnabled && (
+          <div>
+            Say <span className="key">INFINI</span> anytime to talk hands-free.
+          </div>
+        )}
       </div>
+
+      <button
+        type="button"
+        className={`hud-btn assistant-toggle${voiceEnabled ? " active" : ""}`}
+        onClick={() => setVoiceEnabled((v) => !v)}
+        aria-pressed={voiceEnabled}
+        style={{ right: "9.5rem" }}
+      >
+        {voiceEnabled ? "VOICE ON" : "ENABLE VOICE"}
+      </button>
 
       <button
         type="button"
@@ -158,6 +190,7 @@ export default function JarvisOrb() {
         open={assistantOpen}
         onClose={() => setAssistantOpen(false)}
         onActivity={handleActivity}
+        wakeCommand={wakeCommand}
       />
 
       <div className="hud hud-controls">

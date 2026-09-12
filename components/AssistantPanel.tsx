@@ -13,10 +13,12 @@ export default function AssistantPanel({
   open,
   onClose,
   onActivity,
+  wakeCommand,
 }: {
   open: boolean;
   onClose: () => void;
   onActivity: (level: number) => void;
+  wakeCommand?: { token: number; text: string } | null;
 }) {
   const [tab, setTab] = useState<Tab>("chat");
   const [input, setInput] = useState("");
@@ -39,7 +41,6 @@ export default function AssistantPanel({
     },
   });
 
-  // Drive the orb's glow from listening / speaking / thinking state.
   useEffect(() => {
     if (voice.listening) onActivity(0.55);
     else if (pending) onActivity(0.4);
@@ -51,24 +52,38 @@ export default function AssistantPanel({
     logRef.current?.scrollTo({ top: logRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, pending]);
 
-  // Greet the user with a spoken line the moment the panel is opened,
-  // instead of leaving it silent until they type or speak first.
   const greetedRef = useRef(false);
   useEffect(() => {
     if (open && !greetedRef.current) {
       greetedRef.current = true;
-      const greetings = [
-        "What's up, boss?",
-        "Ready when you are.",
-        "Systems online. What do you need?",
-        "Hey, good to see you.",
-      ];
-      const greeting = greetings[Math.floor(Math.random() * greetings.length)];
-      addAssistantMessage(greeting);
+      if (!wakeCommand) {
+        const greetings = [
+          "What's up, boss?",
+          "Ready when you are.",
+          "Systems online. What do you need?",
+          "Hey, good to see you.",
+        ];
+        const greeting = greetings[Math.floor(Math.random() * greetings.length)];
+        addAssistantMessage(greeting);
+      }
     } else if (!open) {
       greetedRef.current = false;
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, addAssistantMessage]);
+
+  const lastWakeTokenRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!wakeCommand || wakeCommand.token === lastWakeTokenRef.current) return;
+    lastWakeTokenRef.current = wakeCommand.token;
+
+    if (wakeCommand.text) {
+      void sendMessage(wakeCommand.text);
+    } else if (voice.supported && !voice.listening) {
+      voice.startListening();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wakeCommand]);
 
   if (!open) return null;
 
@@ -89,7 +104,7 @@ export default function AssistantPanel({
             className={`assistant-tab${tab === "chat" ? " active" : ""}`}
             onClick={() => setTab("chat")}
           >
-            ASSISTANT
+            INFINI
           </button>
           <button
             type="button"
@@ -115,13 +130,13 @@ export default function AssistantPanel({
             )}
             {messages.map((m) => (
               <div key={m.id} className={`assistant-msg ${m.role}`}>
-                <span className="assistant-msg-role">{m.role === "user" ? "YOU" : "ULTRON"}</span>
+                <span className="assistant-msg-role">{m.role === "user" ? "YOU" : "INFINI"}</span>
                 <span className="assistant-msg-text">{m.content}</span>
               </div>
             ))}
             {pending && (
               <div className="assistant-msg assistant">
-                <span className="assistant-msg-role">ULTRON</span>
+                <span className="assistant-msg-role">INFINI</span>
                 <span className="assistant-msg-text assistant-typing">thinking…</span>
               </div>
             )}
