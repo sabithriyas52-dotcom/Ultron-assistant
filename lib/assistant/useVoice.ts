@@ -33,9 +33,34 @@ declare global {
 }
 
 export interface UseVoiceOptions {
-  /** Called with the final recognized transcript once the user stops talking. */
   onFinalTranscript?: (text: string) => void;
   lang?: string;
+}
+
+const PREFERRED_VOICE_NAMES = [
+  "Google US English",
+  "Microsoft Aria Online (Natural)",
+  "Microsoft Guy Online (Natural)",
+  "Microsoft Jenny Online (Natural)",
+  "Samantha",
+  "Daniel",
+  "Google UK English Male",
+  "Google UK English Female",
+];
+
+function pickBestVoice(voices: SpeechSynthesisVoice[]): SpeechSynthesisVoice | null {
+  if (voices.length === 0) return null;
+
+  for (const name of PREFERRED_VOICE_NAMES) {
+    const match = voices.find((v) => v.name.includes(name));
+    if (match) return match;
+  }
+
+  const englishLocal = voices.find((v) => v.lang.startsWith("en") && v.localService);
+  if (englishLocal) return englishLocal;
+
+  const english = voices.find((v) => v.lang.startsWith("en"));
+  return english ?? voices[0];
 }
 
 export function useVoice(options: UseVoiceOptions = {}) {
@@ -50,13 +75,27 @@ export function useVoice(options: UseVoiceOptions = {}) {
   const onFinalRef = useRef(onFinalTranscript);
   onFinalRef.current = onFinalTranscript;
 
+  const voicesRef = useRef<SpeechSynthesisVoice[]>([]);
+
   useEffect(() => {
     const Ctor =
       typeof window !== "undefined"
         ? window.SpeechRecognition ?? window.webkitSpeechRecognition
         : undefined;
     setSupported(Boolean(Ctor));
-    setTtsSupported(typeof window !== "undefined" && "speechSynthesis" in window);
+    const hasTts = typeof window !== "undefined" && "speechSynthesis" in window;
+    setTtsSupported(hasTts);
+
+    if (!hasTts) return;
+
+    const loadVoices = () => {
+      voicesRef.current = window.speechSynthesis.getVoices();
+    };
+    loadVoices();
+    window.speechSynthesis.addEventListener("voiceschanged", loadVoices);
+    return () => {
+      window.speechSynthesis.removeEventListener("voiceschanged", loadVoices);
+    };
   }, []);
 
   const stopListening = useCallback(() => {
@@ -109,8 +148,13 @@ export function useVoice(options: UseVoiceOptions = {}) {
       }
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = 1.02;
-      utterance.pitch = 0.85;
+
+      const bestVoice = pickBestVoice(voicesRef.current);
+      if (bestVoice) utterance.voice = bestVoice;
+
+      utterance.rate = 1.0;
+      utterance.pitch = 0.98;
+
       utterance.onstart = () => setSpeaking(true);
       utterance.onend = () => {
         setSpeaking(false);
