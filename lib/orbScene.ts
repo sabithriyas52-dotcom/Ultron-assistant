@@ -15,8 +15,8 @@ export interface OrbSceneApi {
   dispose(): void;
 }
 
-const HOME_POSITION = new THREE.Vector3(0, 0.3, 5.0);
-const MIN_DISTANCE = 0.6;
+const HOME_POSITION = new THREE.Vector3(0, 1.6, 5.4);
+const MIN_DISTANCE = 0.8;
 const MAX_DISTANCE = 40;
 
 export function createOrbScene(container: HTMLElement): OrbSceneApi {
@@ -31,25 +31,20 @@ export function createOrbScene(container: HTMLElement): OrbSceneApi {
   renderer.setSize(width, height);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 0.9;
+  renderer.toneMappingExposure = 1.0;
   container.appendChild(renderer.domElement);
 
   const composer = new EffectComposer(renderer);
   composer.addPass(new RenderPass(scene, camera));
 
-  const bloom = new UnrealBloomPass(
-    new THREE.Vector2(width, height),
-    2.2,
-    0.45,
-    0.15,
-  );
+  const bloom = new UnrealBloomPass(new THREE.Vector2(width, height), 2.0, 0.5, 0.12);
   composer.addPass(bloom);
 
   const chromaticShader = {
     uniforms: {
       tDiffuse: { value: null },
       uTime: { value: 0 },
-      uIntensity: { value: 0.0025 },
+      uIntensity: { value: 0.002 },
     },
     vertexShader: `
       varying vec2 vUv;
@@ -67,11 +62,11 @@ export function createOrbScene(container: HTMLElement): OrbSceneApi {
         vec2 dir = vUv - vec2(0.5);
         float d = length(dir);
         float offset = uIntensity * d;
-        float flicker = 1.0 + 0.015 * sin(uTime * 24.0) * sin(uTime * 6.1);
+        float flicker = 1.0 + 0.012 * sin(uTime * 20.0) * sin(uTime * 5.3);
         vec4 cr = texture2D(tDiffuse, vUv + dir * offset);
         vec4 cg = texture2D(tDiffuse, vUv);
         vec4 cb = texture2D(tDiffuse, vUv - dir * offset * 0.5);
-        gl_FragColor = vec4(cr.r * 0.9, cg.g * 1.02, cb.b * 1.15, 1.0) * flicker;
+        gl_FragColor = vec4(cr.r * 1.05, cg.g * 1.0, cb.b * 0.85, 1.0) * flicker;
       }
     `,
   };
@@ -86,138 +81,157 @@ export function createOrbScene(container: HTMLElement): OrbSceneApi {
   controls.zoomSpeed = 1.4;
   controls.enablePan = false;
 
-  const C_HOT = 0xffffff;
-  const C_BRIGHT = 0x8fd8ff;
-  const C_MID = 0x4aa8ff;
-  const C_DIM = 0x1f5fbf;
-
   const orbGroup = new THREE.Group();
   scene.add(orbGroup);
 
-  function lineMat(color: number, opacity = 1) {
-    return new THREE.LineBasicMaterial({
-      color,
-      transparent: true,
-      opacity,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    });
-  }
+  const HORIZON_R = 0.85;
+  const horizonMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
+  const horizon = new THREE.Mesh(new THREE.SphereGeometry(HORIZON_R, 48, 48), horizonMat);
+  orbGroup.add(horizon);
 
-  const A = 1.7;
-  const SEGS = 240;
+  const ringCanvas = document.createElement("canvas");
+  ringCanvas.width = ringCanvas.height = 256;
+  const ringCtx = ringCanvas.getContext("2d")!;
+  const ringGrad = ringCtx.createRadialGradient(128, 128, 60, 128, 128, 128);
+  ringGrad.addColorStop(0, "rgba(255,255,255,0)");
+  ringGrad.addColorStop(0.62, "rgba(255,255,255,0)");
+  ringGrad.addColorStop(0.72, "rgba(255,240,220,0.9)");
+  ringGrad.addColorStop(0.82, "rgba(255,180,110,0.5)");
+  ringGrad.addColorStop(1, "rgba(255,140,60,0)");
+  ringCtx.fillStyle = ringGrad;
+  ringCtx.fillRect(0, 0, 256, 256);
+  const ringTex = new THREE.CanvasTexture(ringCanvas);
 
-  function lemniscatePoints(a: number, zAmp: number, zFreq: number, phase: number) {
-    const pts: THREE.Vector3[] = [];
-    for (let i = 0; i <= SEGS; i++) {
-      const t = (i / SEGS) * Math.PI * 2;
-      const x = a * Math.cos(t);
-      const y = a * Math.sin(t) * Math.cos(t);
-      const z = zAmp * Math.sin(t * zFreq + phase);
-      pts.push(new THREE.Vector3(x, y, z));
-    }
-    return pts;
-  }
-
-  interface StrandDrift {
-    baseRotZ: number;
-    phase: number;
-    driftSpeed: number;
-  }
-
-  const infinityGroup = new THREE.Group();
-  const STRAND_COUNT = 48;
-  for (let i = 0; i < STRAND_COUNT; i++) {
-    const jitterA = A * (0.9 + Math.random() * 0.18);
-    const zAmp = 0.04 + Math.random() * 0.18;
-    const zFreq = 1 + Math.floor(Math.random() * 2);
-    const phase = Math.random() * Math.PI * 2;
-    const baseRotZ = (Math.random() - 0.5) * 0.22;
-
-    const pts = lemniscatePoints(jitterA, zAmp, zFreq, phase);
-    const geo = new THREE.BufferGeometry().setFromPoints(pts);
-
-    const roll = Math.random();
-    const color = roll > 0.85 ? C_HOT : roll > 0.5 ? C_BRIGHT : roll > 0.2 ? C_MID : C_DIM;
-    const opacity = roll > 0.85 ? 0.55 + Math.random() * 0.3 : 0.12 + Math.random() * 0.28;
-
-    const line = new THREE.Line(geo, lineMat(color, opacity));
-    line.rotation.z = baseRotZ;
-    line.userData = {
-      baseRotZ,
-      phase,
-      driftSpeed: 0.05 + Math.random() * 0.1,
-    } satisfies StrandDrift;
-    infinityGroup.add(line);
-  }
-  orbGroup.add(infinityGroup);
-
-  const coreSphereMat = new THREE.MeshBasicMaterial({
-    color: C_HOT,
+  const ringSpriteMat = new THREE.SpriteMaterial({
+    map: ringTex,
     transparent: true,
-    opacity: 0.5,
     blending: THREE.AdditiveBlending,
+    depthWrite: false,
   });
-  const coreSphere = new THREE.Mesh(new THREE.SphereGeometry(0.11, 24, 24), coreSphereMat);
-  orbGroup.add(coreSphere);
+  const ringSprite = new THREE.Sprite(ringSpriteMat);
+  ringSprite.scale.set(HORIZON_R * 3.4, HORIZON_R * 3.4, 1);
+  orbGroup.add(ringSprite);
 
-  const glowSphereMat = new THREE.MeshBasicMaterial({
-    color: C_BRIGHT,
-    transparent: true,
-    opacity: 0.16,
-    blending: THREE.AdditiveBlending,
-  });
-  const glowSphere = new THREE.Mesh(new THREE.SphereGeometry(0.4, 24, 24), glowSphereMat);
-  orbGroup.add(glowSphere);
+  const DISK_INNER = HORIZON_R * 1.15;
+  const DISK_OUTER = HORIZON_R * 3.8;
+  const PARTICLE_COUNT = 3200;
 
-  const dustCount = 900;
-  const dustPos = new Float32Array(dustCount * 3);
-  for (let i = 0; i < dustCount; i++) {
-    const rr = 0.6 + Math.pow(Math.random(), 0.6) * 4.5;
-    const theta = Math.random() * Math.PI * 2;
-    const phi = Math.acos(2 * Math.random() - 1);
-    dustPos[i * 3] = rr * Math.sin(phi) * Math.cos(theta);
-    dustPos[i * 3 + 1] = rr * Math.cos(phi) * 0.6;
-    dustPos[i * 3 + 2] = rr * Math.sin(phi) * Math.sin(theta);
+  const diskRadius = new Float32Array(PARTICLE_COUNT);
+  const diskAngle = new Float32Array(PARTICLE_COUNT);
+  const diskY = new Float32Array(PARTICLE_COUNT);
+  const diskSpeed = new Float32Array(PARTICLE_COUNT);
+  const diskPositions = new Float32Array(PARTICLE_COUNT * 3);
+  const diskColors = new Float32Array(PARTICLE_COUNT * 3);
+
+  const HOT = new THREE.Color(0xffffff);
+  const MID = new THREE.Color(0xffcc77);
+  const COOL = new THREE.Color(0xaa3a10);
+
+  for (let i = 0; i < PARTICLE_COUNT; i++) {
+    const rNorm = Math.pow(Math.random(), 1.8);
+    const r = DISK_INNER + rNorm * (DISK_OUTER - DISK_INNER);
+    diskRadius[i] = r;
+    diskAngle[i] = Math.random() * Math.PI * 2;
+    const thickness = 0.06 * (1 - rNorm * 0.7);
+    diskY[i] = (Math.random() - 0.5) * thickness;
+    diskSpeed[i] = 1.1 / Math.sqrt(r / DISK_INNER);
+
+    const t = rNorm;
+    const col = t < 0.5 ? HOT.clone().lerp(MID, t * 2) : MID.clone().lerp(COOL, (t - 0.5) * 2);
+    diskColors[i * 3] = col.r;
+    diskColors[i * 3 + 1] = col.g;
+    diskColors[i * 3 + 2] = col.b;
   }
-  const dustGeo = new THREE.BufferGeometry();
-  dustGeo.setAttribute("position", new THREE.Float32BufferAttribute(dustPos, 3));
+
+  const diskGeo = new THREE.BufferGeometry();
+  diskGeo.setAttribute("position", new THREE.BufferAttribute(diskPositions, 3));
+  diskGeo.setAttribute("color", new THREE.BufferAttribute(diskColors, 3));
 
   const dotC = document.createElement("canvas");
   dotC.width = dotC.height = 64;
   const dCtx = dotC.getContext("2d")!;
   const g = dCtx.createRadialGradient(32, 32, 0, 32, 32, 32);
-  g.addColorStop(0, "rgba(200,230,255,1)");
-  g.addColorStop(0.25, "rgba(120,180,255,0.55)");
-  g.addColorStop(0.55, "rgba(40,100,220,0.15)");
-  g.addColorStop(1, "rgba(10,40,100,0)");
+  g.addColorStop(0, "rgba(255,255,255,1)");
+  g.addColorStop(0.3, "rgba(255,220,180,0.8)");
+  g.addColorStop(0.6, "rgba(255,150,80,0.25)");
+  g.addColorStop(1, "rgba(255,100,40,0)");
   dCtx.fillStyle = g;
   dCtx.fillRect(0, 0, 64, 64);
+  const dotTex = new THREE.CanvasTexture(dotC);
 
-  const dustMat = new THREE.PointsMaterial({
-    map: new THREE.CanvasTexture(dotC),
-    size: 0.035,
+  const diskMat = new THREE.PointsMaterial({
+    map: dotTex,
+    size: 0.045,
     transparent: true,
-    opacity: 0.4,
+    opacity: 0.85,
+    vertexColors: true,
     blending: THREE.AdditiveBlending,
     depthWrite: false,
     sizeAttenuation: true,
-    color: C_BRIGHT,
   });
-  const dustPoints = new THREE.Points(dustGeo, dustMat);
-  orbGroup.add(dustPoints);
+  const diskPoints = new THREE.Points(diskGeo, diskMat);
+  orbGroup.add(diskPoints);
 
-  const haloGeo = new THREE.RingGeometry(A * 0.95, A * 1.02, 128);
-  const haloMat = new THREE.MeshBasicMaterial({
-    color: C_BRIGHT,
+  interface ArcStrand {
+    baseAngle: number;
+    radius: number;
+    length: number;
+    speed: number;
+  }
+  const arcGroup = new THREE.Group();
+  const ARC_COUNT = 14;
+  for (let i = 0; i < ARC_COUNT; i++) {
+    const radius = DISK_INNER + Math.random() * (DISK_OUTER - DISK_INNER);
+    const length = 0.6 + Math.random() * 1.8;
+    const segs = 60;
+    const pts: THREE.Vector3[] = [];
+    for (let j = 0; j <= segs; j++) {
+      const a = (j / segs) * length;
+      pts.push(new THREE.Vector3(radius * Math.cos(a), 0, radius * Math.sin(a)));
+    }
+    const geo = new THREE.BufferGeometry().setFromPoints(pts);
+    const mat = new THREE.LineBasicMaterial({
+      color: Math.random() > 0.5 ? 0xffe6c2 : 0xffa64d,
+      transparent: true,
+      opacity: 0.15 + Math.random() * 0.25,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const line = new THREE.Line(geo, mat);
+    line.userData = {
+      baseAngle: Math.random() * Math.PI * 2,
+      radius,
+      length,
+      speed: 1.1 / Math.sqrt(radius / DISK_INNER),
+    } satisfies ArcStrand;
+    line.rotation.y = line.userData.baseAngle as number;
+    arcGroup.add(line);
+  }
+  orbGroup.add(arcGroup);
+
+  orbGroup.rotation.x = 0.28;
+
+  const starCount = 700;
+  const starPos = new Float32Array(starCount * 3);
+  for (let i = 0; i < starCount; i++) {
+    const rr = 6 + Math.random() * 10;
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
+    starPos[i * 3] = rr * Math.sin(phi) * Math.cos(theta);
+    starPos[i * 3 + 1] = rr * Math.cos(phi);
+    starPos[i * 3 + 2] = rr * Math.sin(phi) * Math.sin(theta);
+  }
+  const starGeo = new THREE.BufferGeometry();
+  starGeo.setAttribute("position", new THREE.Float32BufferAttribute(starPos, 3));
+  const starMat = new THREE.PointsMaterial({
+    color: 0xffffff,
+    size: 0.02,
     transparent: true,
-    opacity: 0,
-    blending: THREE.AdditiveBlending,
-    side: THREE.DoubleSide,
-    depthWrite: false,
+    opacity: 0.5,
+    sizeAttenuation: true,
   });
-  const halo = new THREE.Mesh(haloGeo, haloMat);
-  orbGroup.add(halo);
+  const starPoints = new THREE.Points(starGeo, starMat);
+  scene.add(starPoints);
 
   const sphericalScratch = new THREE.Spherical();
   const offsetScratch = new THREE.Vector3();
@@ -266,32 +280,32 @@ export function createOrbScene(container: HTMLElement): OrbSceneApi {
     rafId = requestAnimationFrame(animate);
     const t = clock.getElapsedTime();
 
-    orbGroup.rotation.y = Math.sin(t * 0.15) * 0.35;
-    orbGroup.rotation.x = Math.sin(t * 0.1) * 0.12;
+    activity += (activityTarget - activity) * 0.08;
+    const speedMul = 1 + activity * 1.8;
 
-    infinityGroup.children.forEach((line) => {
-      const u = line.userData as StrandDrift;
-      line.rotation.z = u.baseRotZ + Math.sin(t * u.driftSpeed + u.phase) * 0.06;
+    for (let i = 0; i < PARTICLE_COUNT; i++) {
+      const r = diskRadius[i];
+      const a = diskAngle[i] + t * diskSpeed[i] * speedMul;
+      diskPositions[i * 3] = r * Math.cos(a);
+      diskPositions[i * 3 + 1] = diskY[i];
+      diskPositions[i * 3 + 2] = r * Math.sin(a);
+    }
+    diskGeo.attributes.position.needsUpdate = true;
+    diskMat.opacity = 0.75 + activity * 0.2;
+
+    arcGroup.children.forEach((line) => {
+      const u = line.userData as ArcStrand;
+      line.rotation.y = u.baseAngle + t * u.speed * speedMul;
     });
 
-    const breathe = 0.5 + 0.5 * Math.sin(t * 1.4);
-    const surge = activity * (0.6 + 0.4 * Math.sin(t * 5));
-    const coreScale = 1 + surge * 1.4 + breathe * 0.08;
-    coreSphere.scale.setScalar(coreScale);
-    coreSphereMat.opacity = Math.min(1, 0.35 + breathe * 0.15 + surge * 0.5);
+    const breathe = 0.5 + 0.5 * Math.sin(t * 1.2);
+    const ringScale = HORIZON_R * (3.2 + breathe * 0.15 + activity * 0.6);
+    ringSprite.scale.set(ringScale, ringScale, 1);
+    ringSpriteMat.opacity = 0.7 + breathe * 0.1 + activity * 0.3;
 
-    glowSphere.scale.setScalar(1 + surge * 1.1 + breathe * 0.1);
-    glowSphereMat.opacity = Math.min(0.6, 0.1 + breathe * 0.05 + surge * 0.35);
+    starPoints.rotation.y += 0.00015;
 
-    const haloScale = 1 + surge * 0.5;
-    halo.scale.setScalar(haloScale);
-    haloMat.opacity = Math.max(0, surge * 0.35 - 0.05);
-
-    dustPoints.rotation.y += 0.0003;
-
-    activity += (activityTarget - activity) * 0.08;
-    const activityBloom = activity * 1.6;
-    bloom.strength = 2.0 + Math.sin(t * 0.6) * 0.2 + activityBloom;
+    bloom.strength = 1.9 + Math.sin(t * 0.5) * 0.15 + activity * 1.3;
 
     chromaticPass.uniforms.uTime.value = t;
 
